@@ -1,0 +1,51 @@
+# 质检选项配置
+check_config: {
+  "timestamp": {
+    "enable": true,
+    "level": "exception"  # 检查级别: "warning" 或 "exception"
+  },
+  "forward_kinematics": {
+    "enable": true,
+    "level": "exception"
+  },
+  "frame_difference": {
+    "enable": true,
+    "level": "warning",
+    "gripper_state": {
+      "enable": true,
+      "level": "warning"  # "warning" 记录日志但不抛异常; "exception" 记录错误并抛异常
+    },
+    "camera": {
+      "enable": true,
+      "level": "warning"
+    }
+  }
+}
+
+# 时间戳质检, 数据正常是30Hz, 0.03s
+data_frequency: 30
+duration_threshold: 2 # 根据时间戳数量计算时长，和时间戳数据头尾相减的数值比较
+max_repetition_count: 10 # 最大允许重复次数
+max_jump_timestamp: 0.2 # 相同key相邻时间戳允许最大差值
+max_diff_timestamp: 0.2 # 不同key相同index时间戳允许最大差值
+
+# FK检查
+fk_service_url: "http://localhost:8080/fk_batch"
+fk_gripper_tolerance: 10 # 夹爪状态允许误差, cartesian_pose中的gripper值与joint_position中的gripper值的允许误差
+fk_position_tolerance_m: 0.1 # 关节正向运动学允许误差, 单位m
+fk_orientation_tolerance_deg: 10 # 关节正向运动学允许误差, 角度制
+
+# 帧差异检查
+image_frame_tolerance: 300 # 图像帧差异允许阈值
+joint_pos_frame_tolerance_deg: 10 # 关节帧差异允许阈值，角度制
+gripper_joint_frame_tolerance: 30 # 夹爪帧差异允许阈值
+cmd_joint_pos_frame_tolerance_deg: 30 # 命令关节帧差异允许阈值，角度制
+cmd_gripper_joint_frame_tolerance: 30 # 命令关节帧差异允许阈值
+joint_vel_frame_tolerance_deg: 300 # 关节速度帧差异允许阈值，角度制
+gripper_joint_vel_frame_tolerance: 1500 # 夹爪速度帧差异允许阈值
+
+cartesian_frame_pos_tolerance_m: 0.5 # 笛卡尔帧差异允许阈值, 单位m
+cartesian_frame_ori_tolerance_deg: 10 # 角度制
+cmd_cartesian_frame_pos_tolerance_m: 0.5 # 笛卡尔帧差异允许阈值, 单位m
+cmd_cartesian_frame_ori_tolerance_deg: 10 # 角度制
+

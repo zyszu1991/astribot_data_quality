@@ -1,0 +1,18 @@
+[project]
+name = "astribot-data-quality"
+version = "0.1.0"
+description = "HDF5 data quality inspection toolkit for Astribot robot data"
+requires-python = ">=3.8"
+dependencies = [
+    "h5py>=3.8.0",
+    "numpy>=1.24.0",
+    "pyyaml>=6.0",
+    "requests>=2.28.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.scripts]
+astribot-dq = "astribot_dq.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["astribot_dq*"]
