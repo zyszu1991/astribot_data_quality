@@ -10,7 +10,10 @@ class FilePath:
     @classmethod
     def get_robot_type_from_task(cls, task_name: str) -> Optional[RobotType]:
         target_name = task_name.replace(TRANS_PREFIX, "").split(".")[0]
-        robot_type_values = "|".join([rt.value for rt in RobotType])
+        # Y3: Sort robot types by length descending so S1_u matches before S1
+        robot_type_values = "|".join(
+            sorted([rt.value for rt in RobotType], key=len, reverse=True)
+        )
         pattern = (
             rf".*_(?P<robot_type>{robot_type_values})_(?P<custom_suffix>[A-Za-z0-9_]*)?$"
         )

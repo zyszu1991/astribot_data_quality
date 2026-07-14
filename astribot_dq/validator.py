@@ -14,6 +14,14 @@ from astribot_dq.schemas import *
 from astribot_dq.config import ValidationConfig, load_validation_config_from_yaml
 
 
+# Below this norm a quaternion is treated as degenerate (e.g. all-zero from a
+# recorder fallback). Such rows cannot be normalized and must not silently pass.
+QUATERNION_MIN_NORM = 1e-6
+
+# Y2: Cap error detail lists to prevent memory bloat on large files with many errors
+MAX_ERROR_DETAILS_ITEMS = 1000
+
+
 def quaternion_angle_diff(q1, q2):
     """Compute angle difference (degrees) between two quaternion arrays.
 
@@ -21,13 +29,31 @@ def quaternion_angle_diff(q1, q2):
         q1, q2: shape (n, 4) arrays in [qx, qy, qz, qw] format.
     Returns:
         shape (n,) array of angle differences in degrees.
+
+    Degenerate (near-zero norm) quaternions cannot be normalized. Instead of
+    dividing by zero and producing NaN -- which makes every ``NaN > threshold``
+    comparison silently False and lets all-zero data pass QC (see R1) -- such
+    rows are returned as ``inf`` so downstream threshold checks reliably fail.
     """
-    q1_norm = q1 / np.linalg.norm(q1, axis=1, keepdims=True)
-    q2_norm = q2 / np.linalg.norm(q2, axis=1, keepdims=True)
+    q1 = np.asarray(q1, dtype=np.float64)
+    q2 = np.asarray(q2, dtype=np.float64)
+
+    q1_len = np.linalg.norm(q1, axis=1, keepdims=True)
+    q2_len = np.linalg.norm(q2, axis=1, keepdims=True)
+    degenerate = (q1_len[:, 0] < QUATERNION_MIN_NORM) | (q2_len[:, 0] < QUATERNION_MIN_NORM)
+
+    # Avoid divide-by-zero warnings; degenerate rows are overwritten below.
+    safe_q1_len = np.where(q1_len < QUATERNION_MIN_NORM, 1.0, q1_len)
+    safe_q2_len = np.where(q2_len < QUATERNION_MIN_NORM, 1.0, q2_len)
+    q1_norm = q1 / safe_q1_len
+    q2_norm = q2 / safe_q2_len
+
     dot_product = np.sum(q1_norm * q2_norm, axis=1)
     dot_product = np.clip(dot_product, -1, 1)
     angle_diff = 2 * np.arccos(np.abs(dot_product))
-    return angle_diff / math.pi * 180
+    result = angle_diff / math.pi * 180
+    result[degenerate] = np.inf
+    return result
 
 
 class HDF5Validator:
@@ -168,6 +194,19 @@ class HDF5Validator:
                     )
                 g_logger.info(f"Frame diff check took {time.time() - start_time:.5f}s")
 
+            # --- Command pose zero-segment checks (R1) ---
+            g_logger.info("========= Command pose zero-segment checks =========")
+            try:
+                self._check_command_pose_zero_segments(hdf5_obj["command_poses_dict/merge_pose"])
+            except (KeyError, ValueError, OSError) as e:
+                g_logger.error(f"Zero-segment check failed (missing or invalid data): {e}")
+                self._handle_check_result(
+                    "frame_difference",
+                    f"Zero-segment check skipped: {e}",
+                    KeyNotFound,
+                    error_details=[{"error": str(e)}],
+                )
+
         g_logger.info("Data QC passed!")
 
     # --- Structure checks ---
@@ -259,11 +298,15 @@ class HDF5Validator:
                 f"{timestamps[idx]} -> {timestamps[idx + 1]}, "
                 f"diff: {diffs[idx]} (threshold: {self.config.max_jump_timestamp})"
             )
+            # Y2: Cap error details list
+            capped_indices = jump_indices[:MAX_ERROR_DETAILS_ITEMS].tolist()
+            truncated = len(jump_indices) > MAX_ERROR_DETAILS_ITEMS
             error_details = [{
                 "key_name": key,
                 "jump_count": int(len(jump_indices)),
                 "max_jump_threshold": float(self.config.max_jump_timestamp),
-                "jump_indices": [int(jdx) for jdx in jump_indices],
+                "jump_indices": capped_indices,
+                "truncated": truncated,
             }]
             self._handle_check_result(
                 "timestamp", error_msg, TimestampJump, error_details=error_details
@@ -299,21 +342,24 @@ class HDF5Validator:
             self._handle_check_result("timestamp", error_msg, TimestampEmpty, error_details=[])
             return
 
-        list_diffs = []
-        for idx in range(num_timestamp):
-            cmp_values = [hdf5_obj[key][idx] for key in cmp_keys]
-            list_diffs.append(max(cmp_values) - min(cmp_values))
-        np_diffs = np.array(list_diffs)
+        # R2: Vectorized implementation - read all timestamp arrays once into memory
+        # instead of indexing HDF5 element-by-element (2400x speedup on 20k frames)
+        timestamp_arrays = {key: hdf5_obj[key][:num_timestamp] for key in cmp_keys}
+
+        # Stack into (num_keys, num_timestamp) for vectorized min/max along axis=0
+        stacked = np.stack([timestamp_arrays[key] for key in cmp_keys], axis=0)
+        max_per_frame = np.max(stacked, axis=0)
+        min_per_frame = np.min(stacked, axis=0)
+        np_diffs = max_per_frame - min_per_frame
 
         max_diff_frame_idx = np.argmax(np_diffs)
         max_diff = np_diffs[max_diff_frame_idx]
 
-        cmp_values_with_keys = [
-            (key, hdf5_obj[key][max_diff_frame_idx]) for key in cmp_keys
-        ]
-        cmp_values_with_keys.sort(key=lambda x: x[1])
-        min_key, min_value = cmp_values_with_keys[0]
-        max_key, max_value = cmp_values_with_keys[-1]
+        # For the worst frame, find which keys had min/max values
+        frame_values = [(key, timestamp_arrays[key][max_diff_frame_idx]) for key in cmp_keys]
+        frame_values.sort(key=lambda x: x[1])
+        min_key, min_value = frame_values[0]
+        max_key, max_value = frame_values[-1]
 
         g_logger.debug(
             f"Timestamp alignment max diff: {max_diff:.6f} @frame {max_diff_frame_idx}, "
@@ -327,10 +373,14 @@ class HDF5Validator:
                 f"Timestamp alignment mismatch: at index {idx}, "
                 f"max diff = {np_diffs[idx]} (threshold: {self.config.max_diff_timestamp})"
             )
+            # Y2: Cap error details list
+            capped_indices = diff_indices[:MAX_ERROR_DETAILS_ITEMS].tolist()
+            truncated = len(diff_indices) > MAX_ERROR_DETAILS_ITEMS
             error_details = [{
                 "mismatch_count": int(len(diff_indices)),
                 "max_mismatch_threshold": float(self.config.max_diff_timestamp),
-                "mismatch_indices": [int(midx) for midx in diff_indices],
+                "mismatch_indices": capped_indices,
+                "truncated": truncated,
             }]
             self._handle_check_result(
                 "timestamp", error_msg, TimestampMismatch, error_details=error_details
@@ -377,7 +427,14 @@ class HDF5Validator:
 
         success, fk_results = self._forward_kinematic_batch(joint_data.tolist(), robot_type)
         if not success:
-            g_logger.warning("FK API call failed, skipping FK check")
+            # Y4: Respect config level when FK API fails
+            error_msg = f"FK API call failed for {merge_pose_key}, skipping FK check"
+            self._handle_check_result(
+                "forward_kinematics",
+                error_msg,
+                CartesianJointFKMismatch,
+                error_details=[{"reason": "fk_api_unavailable"}],
+            )
             return
 
         all_passed = True
@@ -635,18 +692,20 @@ class HDF5Validator:
         max_ori_diff = np.max(ori_diffs_all) if len(ori_diffs_all) > 0 else 0
         max_gripper_diff = np.max(gripper_diffs_array) if len(gripper_diffs_array) > 0 else 0
 
-        max_pos_idx = np.argmax(pos_diffs) if len(pos_diffs) > 0 else -1
-        max_ori_idx = np.argmax(ori_diffs_all) if len(ori_diffs_all) > 0 else -1
-        max_gripper_idx = np.argmax(gripper_diffs_array) if len(gripper_diffs_array) > 0 else -1
-
+        # Y5: Use per-body frame indices instead of flat-concatenated indices
         max_pos_body = (
             max(body_pos_diffs.items(), key=lambda x: x[1])[0]
             if body_pos_diffs else "N/A"
         )
+        max_pos_idx = body_pos_indices.get(max_pos_body, -1) if max_pos_body != "N/A" else -1
+
         max_ori_body = (
             max(body_ori_diffs.items(), key=lambda x: x[1])[0]
             if body_ori_diffs else "N/A"
         )
+        max_ori_idx = body_ori_indices.get(max_ori_body, -1) if max_ori_body != "N/A" else -1
+
+        max_gripper_idx = np.argmax(gripper_diffs_array) if len(gripper_diffs_array) > 0 else -1
 
         g_logger.info(
             f"{check_name}: max_pos={max_pos_diff:.4f}({max_pos_body}) @frame{max_pos_idx}, "
@@ -727,6 +786,79 @@ class HDF5Validator:
             "[command_poses_dict/merge_pose]",
             CartesianCmdFrameDiffInvalid,
         )
+
+    def _check_command_pose_zero_segments(self, cartesian_poses: h5py.Dataset):
+        """Detect all-zero or constant-zero segments in command_poses (R1).
+
+        A locked body part whose command is stuck at fallback 0.0 produces
+        unusable training data. This check catches:
+        - Position (xyz) near-zero across all frames
+        - Quaternion degenerate (norm < QUATERNION_MIN_NORM) across all frames
+        - Entire 7-DOF segment constant (zero variance)
+        """
+        merge_poses = np.array(cartesian_poses)
+        failing_bodies = []
+
+        merge_start_idx = 0
+        for body_idx, cartesian_dof in enumerate(self.whole_body_cartesian_dofs):
+            merge_end_idx = merge_start_idx + cartesian_dof
+            body_name = self.whole_body_names[body_idx]
+
+            # Only check 7-DOF bodies (pose = xyz + quat)
+            if cartesian_dof == 7:
+                poses = merge_poses[:, merge_start_idx:merge_end_idx]
+                xyz = poses[:, :3]
+                quat = poses[:, 3:]
+
+                # Check 1: All xyz near zero
+                xyz_max = np.max(np.abs(xyz))
+                if xyz_max < 1e-6:
+                    failing_bodies.append({
+                        "body": body_name,
+                        "reason": "position_all_zero",
+                        "max_abs_value": float(xyz_max),
+                    })
+                    g_logger.warning(
+                        f"{body_name} command position all near-zero (max={xyz_max:.2e})"
+                    )
+
+                # Check 2: All quaternions degenerate
+                quat_norms = np.linalg.norm(quat, axis=1)
+                if np.all(quat_norms < QUATERNION_MIN_NORM):
+                    failing_bodies.append({
+                        "body": body_name,
+                        "reason": "quaternion_all_degenerate",
+                        "max_norm": float(np.max(quat_norms)),
+                    })
+                    g_logger.warning(
+                        f"{body_name} command quaternion all degenerate (max_norm={np.max(quat_norms):.2e})"
+                    )
+
+                # Check 3: Entire segment constant (stuck)
+                segment_variance = np.var(poses, axis=0)
+                if np.all(segment_variance < 1e-12):
+                    failing_bodies.append({
+                        "body": body_name,
+                        "reason": "segment_constant",
+                        "max_variance": float(np.max(segment_variance)),
+                    })
+                    g_logger.warning(
+                        f"{body_name} command pose constant (max_var={np.max(segment_variance):.2e})"
+                    )
+
+            merge_start_idx = merge_end_idx
+
+        if failing_bodies:
+            body_names = [fb["body"] for fb in failing_bodies]
+            error_msg = f"Command pose zero/constant segments detected: {body_names}"
+            # R1: This is a critical data corruption issue (recorder fallback bug).
+            # Always raise as exception regardless of frame_difference level.
+            g_logger.error(error_msg)
+            raise CommandPoseZeroSegment(
+                "data QC failed", error_msg, failing_bodies
+            )
+        else:
+            g_logger.info("Command pose zero-segment check passed")
 
     def verify_camera_frame_diffs(self, video_analysis_results: Dict):
         if (

@@ -92,3 +92,7 @@ class CartesianStateFrameDiffInvalid(QualityCheckError):
 
 class CartesianCmdFrameDiffInvalid(QualityCheckError):
     pass
+
+
+class CommandPoseZeroSegment(QualityCheckError):
+    pass

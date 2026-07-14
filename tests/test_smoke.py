@@ -91,6 +91,8 @@ class TestHDF5Validator:
         try:
             create_synthetic_hdf5(tmp_path)
             validator = HDF5Validator()
+            # Y4: Disable FK check in tests since API is unavailable
+            validator.config.check_config.forward_kinematics.enable = False
 
             # Should not raise
             validator.verify_data(tmp_path)
@@ -185,6 +187,35 @@ class TestHDF5Validator:
         assert config.check_config.timestamp.enable is True
         assert config.check_config.timestamp.level == "exception"
 
+    def test_all_zero_command_pose_detected(self):
+        """R1 regression: All-zero command_pose should be caught by zero-segment check."""
+        with tempfile.NamedTemporaryFile(
+            suffix=".hdf5", prefix="20250101_Test_S1_01_", delete=False
+        ) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            create_synthetic_hdf5(tmp_path, num_frames=50)
+
+            # Zero out arm_left command (body index 2, cartesian columns 14-20)
+            with h5py.File(tmp_path, "r+") as f:
+                data = f["command_poses_dict/merge_pose"][:]
+                # arm_left is at cartesian index: chassis(7) + torso(7) = 14
+                data[:, 14:21] = 0.0
+                del f["command_poses_dict/merge_pose"]
+                f["command_poses_dict"].create_dataset("merge_pose", data=data)
+
+            validator = HDF5Validator()
+            # Y4: Disable FK check in tests since API is unavailable
+            validator.config.check_config.forward_kinematics.enable = False
+
+            with pytest.raises(QualityCheckError) as exc_info:
+                validator.verify_data(tmp_path)
+            assert "CommandPoseZeroSegment" in str(exc_info.value.error_type)
+
+        finally:
+            os.unlink(tmp_path)
+
 
 class TestInvalidDataDB:
     """Smoke tests for InvalidDataDB."""
@@ -213,6 +244,27 @@ class TestInvalidDataDB:
 
             stats = db.get_statistics()
             assert stats["total_count"] >= 1
+
+
+class TestFilePath:
+    """Tests for FilePath utilities."""
+
+    def test_robot_type_extraction_y3_regression(self):
+        """Y3 regression: S1_u should not be misidentified as S1."""
+        from astribot_dq.file_path import FilePath
+        from astribot_dq.schemas import RobotType
+
+        # S1_u should be correctly identified
+        result = FilePath.get_robot_type_from_task("20250101_TaskName_S1_u_01.hdf5")
+        assert result == RobotType.S1_u
+
+        # S1 should still work
+        result = FilePath.get_robot_type_from_task("20250101_TaskName_S1_01.hdf5")
+        assert result == RobotType.S1
+
+        # S0 should still work
+        result = FilePath.get_robot_type_from_task("20250101_TaskName_S0_01.hdf5")
+        assert result == RobotType.S0
 
 
 if __name__ == "__main__":

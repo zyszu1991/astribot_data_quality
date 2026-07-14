@@ -95,21 +95,6 @@ class InvalidDataDB:
                 )
             """)
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS report_retry_queue (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    url TEXT NOT NULL,
-                    request_body TEXT NOT NULL,
-                    retry_count INTEGER DEFAULT 0,
-                    last_retry_time TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    error_message TEXT
-                )
-            """)
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_report_retry_queue_created_at ON report_retry_queue(created_at)"
-            )
-            cursor.execute("""
                 INSERT OR REPLACE INTO metadata (key, value, updated_at)
                 VALUES ('db_version', ?, CURRENT_TIMESTAMP)
             """, (str(self.DB_VERSION),))
@@ -338,7 +323,7 @@ class InvalidDataDB:
                         continue
                 cleaned += 1
             cursor.execute("DELETE FROM invalid_records WHERE detected_time < ?", (cutoff,))
-            cursor.execute("DELETE FROM report_retry_queue WHERE created_at < ?", (cutoff,))
+            # Y7: report_retry_queue table removed (unused)
             g_logger.info(f"Cleaned {cleaned} old records (>{days} days)")
             return cleaned
 
