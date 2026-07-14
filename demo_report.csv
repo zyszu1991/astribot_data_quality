@@ -1,0 +1,4 @@
+file_name,status,error_type,error_summary,file_size_mb,validation_time_s,timestamp
+0119_episode_0.hdf5,FAIL,CommandPoseZeroSegment,"Command pose zero/constant segments detected: ['astribot_chassis', 'astribot_chassis']",110.54995346069336,0.017,2026-07-14T17:59:25.962325
+0119_episode_15.hdf5,FAIL,CommandPoseZeroSegment,"Command pose zero/constant segments detected: ['astribot_chassis', 'astribot_chassis']",105.53177165985107,0.008,2026-07-14T17:59:25.979064
+0119_episode_29.hdf5,FAIL,CommandPoseZeroSegment,"Command pose zero/constant segments detected: ['astribot_chassis', 'astribot_chassis']",135.2973232269287,0.007,2026-07-14T17:59:25.986586

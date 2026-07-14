@@ -1,0 +1,91 @@
+{
+  "summary": {
+    "total_files": 3,
+    "passed": 0,
+    "failed": 3,
+    "errors": 0,
+    "pass_rate": 0.0,
+    "fail_rate": 100.0,
+    "error_types": {
+      "CommandPoseZeroSegment": 3
+    },
+    "total_time_s": 0.03,
+    "avg_time_s": 0.011
+  },
+  "results": [
+    {
+      "file_path": "/Users/gabrizhao/Documents/projects/dataset/Astribothdf5/0119_episode_0.hdf5",
+      "file_name": "0119_episode_0.hdf5",
+      "file_size_mb": 110.54995346069336,
+      "status": "FAIL",
+      "error_type": "CommandPoseZeroSegment",
+      "error_summary": "Command pose zero/constant segments detected: ['astribot_chassis', 'astribot_chassis']",
+      "error_details": [
+        {
+          "body": "astribot_chassis",
+          "reason": "position_all_zero",
+          "max_abs_value": 0.0
+        },
+        {
+          "body": "astribot_chassis",
+          "reason": "segment_constant",
+          "max_variance": 0.0
+        }
+      ],
+      "validation_time_s": 0.017,
+      "timestamp": "2026-07-14T17:59:25.962325"
+    },
+    {
+      "file_path": "/Users/gabrizhao/Documents/projects/dataset/Astribothdf5/0119_episode_15.hdf5",
+      "file_name": "0119_episode_15.hdf5",
+      "file_size_mb": 105.53177165985107,
+      "status": "FAIL",
+      "error_type": "CommandPoseZeroSegment",
+      "error_summary": "Command pose zero/constant segments detected: ['astribot_chassis', 'astribot_chassis']",
+      "error_details": [
+        {
+          "body": "astribot_chassis",
+          "reason": "position_all_zero",
+          "max_abs_value": 0.0
+        },
+        {
+          "body": "astribot_chassis",
+          "reason": "segment_constant",
+          "max_variance": 0.0
+        }
+      ],
+      "validation_time_s": 0.008,
+      "timestamp": "2026-07-14T17:59:25.979064"
+    },
+    {
+      "file_path": "/Users/gabrizhao/Documents/projects/dataset/Astribothdf5/0119_episode_29.hdf5",
+      "file_name": "0119_episode_29.hdf5",
+      "file_size_mb": 135.2973232269287,
+      "status": "FAIL",
+      "error_type": "CommandPoseZeroSegment",
+      "error_summary": "Command pose zero/constant segments detected: ['astribot_chassis', 'astribot_chassis']",
+      "error_details": [
+        {
+          "body": "astribot_chassis",
+          "reason": "position_all_zero",
+          "max_abs_value": 0.0
+        },
+        {
+          "body": "astribot_chassis",
+          "reason": "segment_constant",
+          "max_variance": 0.0
+        }
+      ],
+      "validation_time_s": 0.007,
+      "timestamp": "2026-07-14T17:59:25.986586"
+    }
+  ],
+  "metadata": {
+    "input_dir": "/Users/gabrizhao/Documents/projects/dataset",
+    "total_files": 3,
+    "config_path": null,
+    "workers": 1,
+    "disable_fk": true,
+    "generated_at": "2026-07-14T17:59:25.993784"
+  }
+}
