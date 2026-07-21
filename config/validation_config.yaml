@@ -30,7 +30,11 @@ max_jump_timestamp: 0.2 # 相同key相邻时间戳允许最大差值
 max_diff_timestamp: 0.2 # 不同key相同index时间戳允许最大差值
 
 # FK检查
-fk_service_url: "http://localhost:8080/fk_batch"
+# FK 正运动学校验依赖外部 HTTP 服务（部署在服务方内网），本工具仅通过 HTTP 调用，
+# 不含运动学实现/URDF/SDK。服务地址请通过环境变量注入，不要写死在此文件：
+#   export ASTRIBOT_FK_SERVICE_URL="https://fk.<your-internal-domain>/fk_batch"
+# 环境变量优先级高于本项。留空时 FK 检查自动跳过，不阻断质检流程。
+fk_service_url: ""
 fk_gripper_tolerance: 10 # 夹爪状态允许误差, cartesian_pose中的gripper值与joint_position中的gripper值的允许误差
 fk_position_tolerance_m: 0.1 # 关节正向运动学允许误差, 单位m
 fk_orientation_tolerance_deg: 10 # 关节正向运动学允许误差, 角度制

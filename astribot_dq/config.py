@@ -1,3 +1,4 @@
+import os
 import yaml
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -150,4 +151,13 @@ def load_validation_config_from_yaml(path: Optional[str] = None) -> ValidationCo
         check_config_dict = raw.pop("check_config")
         raw["check_config"] = _build_check_config_from_raw(check_config_dict)
 
-    return ValidationConfig(**raw)
+    config = ValidationConfig(**raw)
+
+    # FK 服务地址由部署环境注入，优先级高于配置文件。
+    # 外发版不应把真实内网地址写进 YAML；由客户/运维通过环境变量提供。
+    # 未设置且 YAML 也为空时 fk_service_url 保持为空 -> FK 检查自动跳过。
+    env_fk_url = os.environ.get("ASTRIBOT_FK_SERVICE_URL")
+    if env_fk_url is not None:
+        config.fk_service_url = env_fk_url
+
+    return config
