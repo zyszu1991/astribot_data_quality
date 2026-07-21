@@ -266,6 +266,18 @@ class TestFilePath:
         result = FilePath.get_robot_type_from_task("20250101_TaskName_S0_01.hdf5")
         assert result == RobotType.S0
 
+        # Names ending exactly at the robot type (no trailing suffix) must match.
+        # These previously returned None (mandatory "_") or split S1_u -> S1.
+        assert FilePath.get_robot_type_from_task("20250101_TaskName_S1_u.hdf5") == RobotType.S1_u
+        assert FilePath.get_robot_type_from_task("20250101_TaskName_S1.hdf5") == RobotType.S1
+        assert FilePath.get_robot_type_from_task("20250101_TaskName_S0.hdf5") == RobotType.S0
+
+        # With TRANS_PREFIX and no suffix
+        assert FilePath.get_robot_type_from_task("hdf5_output_20250101_Task_S1_u.hdf5") == RobotType.S1_u
+
+        # No robot type -> None
+        assert FilePath.get_robot_type_from_task("20250101_TaskName_only.hdf5") is None
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
