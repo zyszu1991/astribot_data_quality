@@ -795,9 +795,20 @@ class HDF5Validator:
         - Position (xyz) near-zero across all frames
         - Quaternion degenerate (norm < QUATERNION_MIN_NORM) across all frames
         - Entire 7-DOF segment constant (zero variance)
+
+        Bodies listed in ``config.zero_segment_exempt_bodies`` (e.g. the
+        chassis, which is legitimately motionless in many tasks) are still
+        inspected and logged, but a hit is downgraded to a warning instead of
+        failing the file. Non-exempt bodies still hard-fail.
         """
+        if not self.config.zero_segment_check_enable:
+            g_logger.info("Command pose zero-segment check disabled by config")
+            return
+
+        exempt_bodies = set(self.config.zero_segment_exempt_bodies)
         merge_poses = np.array(cartesian_poses)
-        failing_bodies = []
+        failing_bodies = []       # non-exempt hits -> raise
+        exempt_hits = []          # exempt hits -> warn only
 
         merge_start_idx = 0
         for body_idx, cartesian_dof in enumerate(self.whole_body_cartesian_dofs):
@@ -809,44 +820,61 @@ class HDF5Validator:
                 poses = merge_poses[:, merge_start_idx:merge_end_idx]
                 xyz = poses[:, :3]
                 quat = poses[:, 3:]
+                is_exempt = body_name in exempt_bodies
+                sink = exempt_hits if is_exempt else failing_bodies
 
                 # Check 1: All xyz near zero
                 xyz_max = np.max(np.abs(xyz))
                 if xyz_max < 1e-6:
-                    failing_bodies.append({
+                    sink.append({
                         "body": body_name,
                         "reason": "position_all_zero",
                         "max_abs_value": float(xyz_max),
+                        "exempt": is_exempt,
                     })
                     g_logger.warning(
                         f"{body_name} command position all near-zero (max={xyz_max:.2e})"
+                        f"{' [exempt]' if is_exempt else ''}"
                     )
 
                 # Check 2: All quaternions degenerate
                 quat_norms = np.linalg.norm(quat, axis=1)
                 if np.all(quat_norms < QUATERNION_MIN_NORM):
-                    failing_bodies.append({
+                    sink.append({
                         "body": body_name,
                         "reason": "quaternion_all_degenerate",
                         "max_norm": float(np.max(quat_norms)),
+                        "exempt": is_exempt,
                     })
                     g_logger.warning(
-                        f"{body_name} command quaternion all degenerate (max_norm={np.max(quat_norms):.2e})"
+                        f"{body_name} command quaternion all degenerate "
+                        f"(max_norm={np.max(quat_norms):.2e})"
+                        f"{' [exempt]' if is_exempt else ''}"
                     )
 
                 # Check 3: Entire segment constant (stuck)
                 segment_variance = np.var(poses, axis=0)
                 if np.all(segment_variance < 1e-12):
-                    failing_bodies.append({
+                    sink.append({
                         "body": body_name,
                         "reason": "segment_constant",
                         "max_variance": float(np.max(segment_variance)),
+                        "exempt": is_exempt,
                     })
                     g_logger.warning(
-                        f"{body_name} command pose constant (max_var={np.max(segment_variance):.2e})"
+                        f"{body_name} command pose constant "
+                        f"(max_var={np.max(segment_variance):.2e})"
+                        f"{' [exempt]' if is_exempt else ''}"
                     )
 
             merge_start_idx = merge_end_idx
+
+        if exempt_hits:
+            exempt_names = sorted({h["body"] for h in exempt_hits})
+            g_logger.warning(
+                f"Command pose zero/constant segments on exempt bodies "
+                f"(warning only, not failing): {exempt_names}"
+            )
 
         if failing_bodies:
             body_names = [fb["body"] for fb in failing_bodies]

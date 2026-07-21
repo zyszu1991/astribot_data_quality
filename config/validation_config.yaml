@@ -49,3 +49,9 @@ cartesian_frame_ori_tolerance_deg: 10 # 角度制
 cmd_cartesian_frame_pos_tolerance_m: 0.5 # 笛卡尔帧差异允许阈值, 单位m
 cmd_cartesian_frame_ori_tolerance_deg: 10 # 角度制
 
+# command_pose 全零/常量段检查 (R1: 拦截 recorder fallback 0.0 废数据)
+zero_segment_check_enable: true # 是否启用零段检查
+# 豁免部件: 命中零段只记 warning 不判 FAIL (如底盘静止时 command 本就全零, 属正常)
+zero_segment_exempt_bodies:
+  - astribot_chassis
+

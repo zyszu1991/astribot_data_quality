@@ -62,6 +62,16 @@ class ValidationConfig:
     cmd_cartesian_frame_pos_tolerance_m: float = 0.5
     cmd_cartesian_frame_ori_tolerance_deg: float = 10
 
+    # Command-pose zero/constant-segment check (R1).
+    # Some bodies (e.g. the chassis) are legitimately motionless in many tasks,
+    # so their command pose is all-zero by design. Bodies listed as exempt are
+    # still inspected and logged, but a hit is downgraded to a warning instead
+    # of failing the file. Non-exempt bodies still hard-fail.
+    zero_segment_check_enable: bool = True
+    zero_segment_exempt_bodies: list = field(
+        default_factory=lambda: ["astribot_chassis"]
+    )
+
     def is_check_enabled(self, check_type: str, sub_check: str = None) -> bool:
         if check_type == "timestamp":
             return self.check_config.timestamp.enable
